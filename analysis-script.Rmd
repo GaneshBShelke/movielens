@@ -1,0 +1,424 @@
+---
+title: "analysis-script"
+author: "Ganesh Shelke"
+date: "15/06/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(dslabs)
+library(caret)
+```
+
+#### Data Import
+
+We have used MovieLens 10M movie ratings. The MovieLens data set contains 10000054 rows, 10677 movies, 797 genres and 69878 users. Released 1/2009. The data were imported from GroupLens using a script provided by the course. After removing 10% validation set, the 90% training set will be referred to as the edX dataset to disambiguate it from training and test sets derived from this EdX dataset. The version of movielens included in the dslabs package is just a small subset of a much larger dataset with millions of ratings.
+
+
+```{r}
+
+###################################
+# Create edx set and validation set
+###################################
+
+# Note: this process could take a couple of minutes
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Validation set will be 10% of MovieLens data
+
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+
+validation <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+```
+
+
+### Data Wrangling
+
+We have performed some wrangling steps on both the edX and validation sets before splitting it into training and test data and the following variables were generated (with its type in bracket)
+
+* `action` - whether film includes "Action" genre (logical)
+* `adventure` - whether film includes "Adventure" genre (logical)
+* `animation` - whether film includes "Animation" genre (logical)
+* `children` - whether film includes "Children" genre (logical)
+* `comedy` - whether film includes "Comedy" genre (logical)
+* `crime` - whether film includes "Crime" genre (logical)
+* `documentary` - whether film includes "Documentary" genre (logical)
+* `drama` - whether film includes "Drama" genre (logical)
+* `fantasy` - whether film includes "Fantasy" genre (logical)
+* `filmNoir` - whether film includes "Film-Noir" genre (logical)
+* `horror` - whether film includes "Horror" genre (logical)
+* `imax` - whether film includes "IMAX" genre (logical)
+* `musical` - whether film includes "Musical" genre (logical)
+* `mystery` - whether film includes "Mystery" genre (logical)
+* `romance` - whether film includes "Romance" genre (logical)
+* `sciFi` - whether film includes "Sci-Fi" genre (logical)
+* `thriller` - whether film includes "Thriller" genre (logical)
+* `war` - whether film includes "War" genre (logical)
+* `western` - whether film includes "Western" genre (logical)
+* `unknown` - whether film includes "Unknown" genre (logical)
+* `ratingFactor` - star rating as a factor (factor)
+
+### edx dataset : it's 90% of the 10M Movielens dataset.
+
+#### Adding `ratingFactor`
+
+```{r}
+edx <- edx %>%
+  mutate(ratingFactor = factor(rating))
+```
+
+
+#### Adding base genre variables to edx
+
+```{r}
+edx <- edx %>%
+  mutate(action = str_detect(genres, "Action"),
+         adventure = str_detect(genres, "Adventure"),
+         animation = str_detect(genres, "Animation"),
+         children = str_detect(genres, "Children"),
+         comedy = str_detect(genres, "Comedy"),
+         crime = str_detect(genres, "Crime"),
+         documentary = str_detect(genres, "Documentary"),
+         drama = str_detect(genres, "Drama"),
+         fantasy = str_detect(genres, "Fantasy"),
+         filmNoir = str_detect(genres, "Film-Noir"),
+         imax = str_detect(genres, "IMAX"),
+         horror = str_detect(genres, "Horror"),
+         musical = str_detect(genres, "Musical"),
+         mystery = str_detect(genres, "Mystery"),
+         romance = str_detect(genres, "Romance"),
+         sciFi = str_detect(genres, "Sci-Fi"),
+         thriller = str_detect(genres, "Thriller"),
+         war = str_detect(genres, "War"),
+         western = str_detect(genres, "Western"),
+         unknown = str_detect(genres, "Unknown"))
+```
+
+####`userId` and `movieId` are converted to factors.
+
+```{r}
+edx <- edx %>%
+  mutate(userId = factor(userId),
+         movieId = factor(movieId))
+```
+
+#Now we will perfom the same steps for validation data set which is 10% (999,999 ratings) of the 10M Movielens dataset.
+
+### validation dataset wrangling
+
+#### Adding `ratingFactor`
+
+```{r}
+validation <- validation %>%
+  mutate(ratingFactor = factor(rating))
+```
+
+#### Adding base genre variables to validation data
+
+```{r}
+validation <- validation %>%
+  mutate(action = str_detect(genres, "Action"),
+         adventure = str_detect(genres, "Adventure"),
+         animation = str_detect(genres, "Animation"),
+         children = str_detect(genres, "Children"),
+         comedy = str_detect(genres, "Comedy"),
+         crime = str_detect(genres, "Crime"),
+         documentary = str_detect(genres, "Documentary"),
+         drama = str_detect(genres, "Drama"),
+         fantasy = str_detect(genres, "Fantasy"),
+         filmNoir = str_detect(genres, "Film-Noir"),
+         imax = str_detect(genres, "IMAX"),
+         horror = str_detect(genres, "Horror"),
+         musical = str_detect(genres, "Musical"),
+         mystery = str_detect(genres, "Mystery"),
+         romance = str_detect(genres, "Romance"),
+         sciFi = str_detect(genres, "Sci-Fi"),
+         thriller = str_detect(genres, "Thriller"),
+         war = str_detect(genres, "War"),
+         western = str_detect(genres, "Western"),
+         unknown = str_detect(genres, "Unknown"))
+```
+
+#### `userId` and `movieId` are converted to factors and checked for levels of those factors with edx data
+
+```{r}
+validation <- validation %>%
+  mutate(userId = factor(userId , levels = levels(edx$userId)),
+         movieId = factor(movieId, levels = levels(edx$movieId)))
+```
+
+## Training and test sets
+
+The EdX 10M MovieLens data were split into a 90% training set (edx dataset) and 10% test set (validation data). The test set contained only movies and users also present in the training set.
+
+
+## Modeling 
+
+### The Naive assumption - to predict the mean rating
+
+```{r}
+# calculate muHat
+muHat <- mean(edx$rating)
+# calculating RMSE for naive model of predicting muHat
+naiveRmse <- RMSE(edx$rating, muHat)
+# defining results table (we will add results of different methods to this table)
+resultsTable <- data_frame(method = "Mean rating", RMSE = naiveRmse)
+```
+
+### Movie effect with regularization
+
+```{r}
+# The 5-folds cross-validation
+set.seed(1, sample.kind = "Rounding")
+crossValFolds <- createFolds(edx$rating, k = 5)
+# calculating regularization coefficient for movie effect on 5 folds and storing it as movieLambdas
+movieLambdas <- map_dbl(1:5, function(i){
+  # creating foldTrain and foldTest, local train and test sets for the ith fold
+  index <- crossValFolds[[i]]
+  foldTrain <- edx[index, ]
+  foldTest <- edx[-index, ]
+  
+  # remove movies from foldTest that are not present in foldTrain
+  foldTest <- foldTest %>%
+    filter(movieId %in% foldTrain$movieId)
+  
+  # assign lambdas to try
+  lambdas <- seq(0, 10, 0.25)
+  
+  # define sumResiduals and numReviews for regularization formula
+  movieResidualInfo <- foldTrain %>%
+    group_by(movieId) %>%
+    summarize(sumResiduals = sum(rating - muHat), numReviews = n())
+  
+  # try a variety of lambdas as regularization coefficients and calculate RMSE for each lambda
+  rmses <- sapply(lambdas, function(lambda){
+    predicted_ratings <- foldTest %>%
+      left_join(movieResidualInfo, by = "movieId") %>%
+      mutate(movieBias = sumResiduals/(numReviews + lambda),
+             pred = muHat + movieBias) %>%
+      .$pred
+    return(RMSE(predicted_ratings, foldTest$rating))
+  })
+  
+  # return the lambda that generates the minimum RMSE
+  lambdas[which.min(rmses)]
+})
+# Taking the mean of the movie regularization coefficients across folds and store as movieLambda
+movieLambda <- mean(movieLambdas)
+# calculate regularized movie effect for each movie using optimized regularization coefficient, store as movieBiasRegularized
+movieBiasRegularized <- edx %>%
+  group_by(movieId) %>%
+  summarize(movieBiasReg = sum(rating - muHat)/(n() + movieLambda))
+```
+
+```{r}
+# join movie bias to training set
+edx <- edx %>%
+  left_join(movieBiasRegularized)
+# join movie bias to test set
+validation <- validation %>%
+  left_join(movieBiasRegularized)
+# calculate test set ratings with muHat and movie bias
+movieEffectRegModel <- muHat + validation$movieBiasReg
+# calculate test set RMSE
+movieEffectRegRMSE <- RMSE(validation$rating, movieEffectRegModel)
+# add movie effect RMSE to results table
+resultsTable <- bind_rows(resultsTable,
+                          data_frame(method = "Regularized movie effect added",
+                                     RMSE = movieEffectRegRMSE))
+```
+
+
+# Now we will add other effects to the regularized movie effect we have already calculated: regularized user effect and regularized genre effect and finally apply this model to our test set that is validation set to report final RMSE on validation set.
+
+### User effect with regularization
+
+```{r}
+## define regularized user effects
+# calculate regularization coefficient for user effect on 5 folds, store as userLambdas
+userLambdas <- map_dbl(1:5, function(i){
+  # create foldTrain and foldTest, local train and test sets for the ith fold
+  index <- crossValFolds[[i]]
+  foldTrain <- edx[index, ]
+  foldTest <- edx[-index, ]
+  
+  # remove users from foldTest that are not present in foldTrain
+  foldTest <- foldTest %>%
+    filter(userId %in% foldTrain$userId)
+  
+  # assign lambdas to try
+  lambdas <- seq(0, 10, 0.25)
+  
+  # define sumResiduals and numReviews for regularization formula
+  userResidualInfo <- foldTrain %>%
+    group_by(userId) %>%
+    summarize(sumResiduals = sum(rating - muHat - movieBiasReg), numReviews = n())
+  
+  # try a variety of lambdas as regularization coefficients and calculate RMSE for each lambda
+  rmses <- sapply(lambdas, function(lambda){
+    predicted_ratings <- foldTest %>%
+      left_join(userResidualInfo, by = "userId") %>%
+      mutate(userBias = sumResiduals/(numReviews + lambda),
+             pred = muHat + movieBiasReg + userBias) %>%
+      .$pred
+    return(RMSE(predicted_ratings, foldTest$rating))
+  })
+  
+  # return the lambda that generates the minimum RMSE
+  lambdas[which.min(rmses)]
+})
+# determine mean lambda across folds
+userLambda <- mean(userLambdas)
+# calculate regularized user effect for each movie using optimized regularization coefficient, store as userBiasRegularized
+userBiasRegularized <- edx %>%
+  group_by(userId) %>%
+  summarize(userBiasReg = sum(rating - muHat - movieBiasReg)/(n() + userLambda))
+```
+
+```{r}
+# join user bias to train set
+edx <- edx %>%
+  left_join(userBiasRegularized)
+# join user bias to test set
+validation <- validation %>%
+  left_join(userBiasRegularized)
+# calculate predictions with muHat, movie and user effects
+userEffectRegModel <- muHat + validation$movieBiasReg + validation$userBiasReg
+# calculate RMSE for muHat, movie and user effects
+userEffectRegRMSE <- RMSE(validation$rating, userEffectRegModel)
+# add user model to results table
+resultsTable <- bind_rows(resultsTable,
+                          data_frame(method = "Regularized user effect added",
+                                     RMSE = userEffectRegRMSE))
+```
+
+### Genre effects with regularization
+
+```{r}
+# calculate regularization coefficient for user effect on 5 folds, store as userLambdas
+genreLambdas <- map_dbl(1:5, function(i){
+  # create foldTrain and foldTest, local train and test sets for the ith fold
+  index <- crossValFolds[[i]]
+  foldTrain <- edx[index, ]
+  foldTest <- edx[-index, ]
+  
+  # remove users from foldTest that are not present in foldTrain
+  foldTest <- foldTest %>%
+    filter(genres %in% foldTrain$genres)
+  
+  # assign lambdas to try
+  lambdas <- seq(100, 1000, 100)
+  
+  # define sumResiduals and numReviews for regularization formula
+  genreResidualInfo <- foldTrain %>%
+    group_by(genres) %>%
+    summarize(sumResiduals = sum(rating - muHat - movieBiasReg - userBiasReg), numReviews = n())
+  
+  # try a variety of lambdas as regularization coefficients and calculate RMSE for each lambda
+  rmses <- sapply(lambdas, function(lambda){
+    predicted_ratings <- foldTest %>%
+      left_join(genreResidualInfo, by = "genres") %>%
+      mutate(genreBias = sumResiduals/(numReviews + lambda),
+             pred = muHat + movieBiasReg + userBiasReg + genreBias) %>%
+      .$pred
+    return(RMSE(predicted_ratings, foldTest$rating))
+  })
+  
+  # return the lambda that generates the minimum RMSE
+  lambdas[which.min(rmses)]
+})
+# determine mean lambda across folds
+genreLambda <- mean(genreLambdas)
+# calculate regularized user effect for each movie using optimized regularization coefficient, store as userBiasRegularized
+genreBiasRegularized <- edx %>%
+  group_by(genres) %>%
+  summarize(genreBiasReg = sum(rating - muHat - movieBiasReg - userBiasReg)/(n() + userLambda))
+```
+
+
+```{r}
+# join genre effects to train set
+edx <- edx %>%
+  left_join(genreBiasRegularized)
+# join genre effects to test set
+validation <- validation %>%
+  left_join(genreBiasRegularized)
+# calculate test predictions with muHat, movie bias, user bias and genre bias
+genreEffectRegModel <- muHat + validation$movieBiasReg + validation$userBiasReg + validation$genreBiasReg
+# calculate test RMSE with muHat, movie bias, user bias and genre bias
+genreEffectRegRMSE <- RMSE(validation$rating, genreEffectRegModel)
+# add genre effect to results table
+resultsTable <- bind_rows(resultsTable,
+                          data_frame(method = "Regularized genre effect added",
+                                     RMSE = genreEffectRegRMSE))
+```
+
+### Applying final model to validation set
+
+```{r}
+# join movie, user and genre bias to validation set
+validation <- validation %>%
+  left_join(movieBiasRegularized) %>%
+  left_join(userBiasRegularized) %>%
+  left_join(genreBiasRegularized)
+# calculate predictions for validation set on final model
+finalModel <- muHat + validation$movieBiasReg + validation$userBiasReg + validation$genreBiasReg
+# calculate RMSE on final model
+finalRMSE <- RMSE(validation$rating, finalModel)
+# add genre effect to results table
+resultsTable <- bind_rows(resultsTable,
+                          data_frame(method = "Final model on validation set",
+                                     RMSE = finalRMSE))
+```
+
+## The final RMSE
+
+```{r}
+finalRMSE
+```

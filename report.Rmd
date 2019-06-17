@@ -1,0 +1,448 @@
+---
+title: "analysis-report"
+author: "Ganesh Shelke"
+date: "15/06/2019"
+output: 
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Recommendation systems use user behavior to predict or suggest recommendations of other items to the user. For example Facebook Amazon, Google and Netflix use these algorithms to customize recommendations and thus increase revenue.Recently there are many companies working in many fields and use these systems to tackle the problem. For example, a healthcare software company can use the patients' data to predict if the patient has a cancer and if so, is it benign or malignant. This helps in early detection of cancer and eventually save many lives.
+
+## Objective
+
+In this project, we will showcase a movie recommendation algorithm to predict user ratings of movies based on a database of user reviews.The goal is to develop a model for movie rating given 5 base variables (user ID, movie title, movie year, movie genre, and review date). We have used 10M MovieLens dataset. And final algorithm was used to predict ratings on a validation set. The performance of the algorithm was evaluated by RMSE, or root mean square error in stars between predicted rating and actual rating. 
+
+## The Dataset
+
+We have used the [10M version of the MovieLens dataset](https://grouplens.org/datasets/movielens/10m/). The MovieLens data set contains 10000054 rows, 10677 movies, 797 genres and 69878 users.The edx dataset (train set) contains 9,000,055 ratings of 10,677 movies by 69,878 users and consisted of 90% of the original benchmark MovieLens 10M dataset while validation set contains 999,999 ratings. 
+
+The dataset consists of the following variables:
+
+"userId", "movieId", "rating", "timestamp", "title", "genres"
+
+* `userId`: Unique user ID number.
+* `movieId`: Unique movielens movie ID number.
+* `rating`: User-provided ratings on a 5-star scale with half-star increments starting from 0.5
+* `timestamp`: Time of user-submitted review in epoch time, 
+* `title`: Movie titles including year of release as identified in [IMDB](http://www.imdb.com)
+* `genres`: A pipe-separated list of film genres
+
+### Performance
+Exploratory data analysis on the modeling data revealed correlations between rating and movie ID, user ID and genre. The final model accounting for movie, user and genre bias yielded a root mean squared error (RMSE) of 0.865 on the validation set.
+
+
+## Methods
+
+### Data Download and Extraction of Validation Set 
+
+We downloaded the MovieLens 10M dataset from https://grouplens.org/datasets/movielens/10m/ and then processed by code provided by the course where we removed a 10% validation set from the initial data. The validation set was used only to evaluate the final model. This study uses the remaining 90% of the data, edx data, for all training and testing.
+
+### Exploratory Data Analysis (EDA)
+
+We performed exploration was on the edx dataset. Selected results from the exploratory analysis are reported for variables used in the final model: movie, user and base genre.
+
+### Data Wrangling
+
+We have performed some wrangling steps on both the edX and validation sets before splitting it into training and test data and the following variables were generated (with its type in bracket)
+
+* `action` - whether film includes "Action" genre (logical)
+* `adventure` - whether film includes "Adventure" genre (logical)
+* `animation` - whether film includes "Animation" genre (logical)
+* `children` - whether film includes "Children" genre (logical)
+* `comedy` - whether film includes "Comedy" genre (logical)
+* `crime` - whether film includes "Crime" genre (logical)
+* `documentary` - whether film includes "Documentary" genre (logical)
+* `drama` - whether film includes "Drama" genre (logical)
+* `fantasy` - whether film includes "Fantasy" genre (logical)
+* `filmNoir` - whether film includes "Film-Noir" genre (logical)
+* `horror` - whether film includes "Horror" genre (logical)
+* `imax` - whether film includes "IMAX" genre (logical)
+* `musical` - whether film includes "Musical" genre (logical)
+* `mystery` - whether film includes "Mystery" genre (logical)
+* `romance` - whether film includes "Romance" genre (logical)
+* `sciFi` - whether film includes "Sci-Fi" genre (logical)
+* `thriller` - whether film includes "Thriller" genre (logical)
+* `war` - whether film includes "War" genre (logical)
+* `western` - whether film includes "Western" genre (logical)
+* `unknown` - whether film includes "Unknown" genre (logical)
+* `ratingFactor` - star rating as a factor (factor)
+
+### Training and test sets
+
+The EdX 10M MovieLens data were split into a 90% training set (edx dataset) and 10% test set (validation data). The test set contained only movies and users also present in the training set.
+
+### Modeling
+
+We trained a linear model on a 90% training set and tested on a 10% test set. The covariates were iteratively added and evaluated with root mean squared error (RMSE) as the loss function. The final model accounted for movie, user and genre effects, regularized by number of reviews per movie, user or genre. The final model yielded an RMSE of 0.862 on the test set and 0.865 on the validation set.
+
+## Results
+
+### Exploratory Data Analysis
+
+The properties of covariates relevant to the final model are described here. 
+
+```{r message=FALSE, echo=FALSE}
+library(tidyverse)
+library(lubridate)
+library(gridExtra)
+library(hexbin)
+#############################################################
+# Create edx set, validation set, and submission file
+#############################################################
+# Note: this process could take a couple of minutes
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+movielens <- left_join(ratings, movies, by = "movieId")
+# Validation set will be 10% of MovieLens data
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+# Make sure userId and movieId in validation set are also in edx set
+validation <- temp %>% 
+     semi_join(edx, by = "movieId") %>%
+     semi_join(edx, by = "userId")
+# Add rows removed from validation set back into edx set
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+```
+
+##### Rating: The `rating` variable
+
+The rating variable consists of a numeric five-star rating with half-star increments. The average rating across all movies and users is 3.51 stars. There is a clear discretization effect where whole-star ratings are more frequent than half-star ratings. The distribution is skewed to the right with a mode of 4 stars.
+
+```{r echo=FALSE}
+#Mean of ratings
+mean(edx$rating)
+# add variable with rating converted to factor
+edx <- edx %>%
+  mutate(ratingFactor = factor(rating))
+# histogram of distribution of movie ratings using factor encoded values
+edx %>%
+  ggplot(aes(x = ratingFactor)) +
+  geom_bar() +
+  ggtitle("Distribution of movie ratings") +
+  xlab("Rating (number of stars)") +
+  ylab("Count")
+```
+
+##### Movies: The `movieId` Variable
+
+The movie variable `movieId` contains the unique MovieLens movie ID number for each movie. A given `movieId` value is always paired with the same `title` value. We have 10677 unique movie IDs in the dataset with a median of 122 ratings.
+
+```{r echo=FALSE}
+# define movies dataframe for EDA with computed number of ratings, average rating and rating standard deviation
+movies <- edx %>%
+  group_by(movieId, title, genres) %>%
+  summarize(numRatings = n(), avgRating = mean(rating), sdRating = sd(rating))
+# histogram of number of ratings per movie
+movies %>%
+  ggplot(aes(numRatings)) +
+  geom_histogram(bins = 30, color = "black") +
+  scale_x_log10() +
+  ggtitle("Number of Ratings per Movie") +
+  xlab("Number of reviews (log scale)") +
+  ylab("Count of movies") +
+  scale_color_manual(labels = c("median"), values = c("blue")) +
+  geom_vline(aes(xintercept = 122, color = "blue"), show.legend = TRUE) +
+  labs(color = "Key values")
+```
+
+##### Average Rating Per Movie
+
+The average mean rating per movie is 3.192, much lower than the average rating over all movies of 3.512 and the average rating over users of 3.614. This discrepancy suggests that movies with higher number of reviews get the bulk of positive reviews.
+
+```{r echo=FALSE}
+# histogram of average rating per movie 
+movies %>%
+  ggplot(aes(avgRating)) +
+  geom_histogram(bins = 30, color = "black") +
+  ggtitle("Average Rating of Movies") +
+  xlab("Average rating") +
+  ylab("Count of movies") +
+  scale_color_manual(labels = c("median"), values = c("blue")) +
+  geom_vline(aes(xintercept = 3.268, color = "blue"), show.legend = TRUE) +
+  labs(color = "Key values")
+```
+
+##### Relationship Between Movie Rating (stars) and Number of Movie Reviews
+
+Movies with more ratings tend to have higher average ratings. Also, the number of movies with extremely large or extremely small standard deviations decreases as the number of reviews increases. This suggests that movie ratings stabilize over time and movies with many reviews have more trustworthy expected ratings than movies with few reviews.
+
+```{r echo=FALSE}
+#  plot of movie average rating versus number of movie ratings
+avgMoviePlot <- movies %>%
+  ggplot(aes(numRatings, avgRating)) +
+  geom_hex() + 
+  geom_smooth(aes(col = "red")) +
+  scale_color_discrete(name="Expected Avg") +
+  theme(legend.text = element_blank()) +
+  scale_x_log10() +
+  xlab("Number of movie ratings") +
+  ylab("Average movie rating") +
+  ggtitle("Average movie rating vs review count")
+#  plot of movie rating SD versus number of movie ratings
+sdMoviePlot <- movies %>%
+  ggplot(aes(numRatings, sdRating)) +
+  geom_hex() + 
+  geom_smooth(aes(col = "red")) +
+  scale_color_discrete(name="Expected SD") +
+  theme(legend.text = element_blank()) +
+  scale_x_log10() +
+  xlab("Number of movie ratings") +
+  ylab("Standard deviation of movie rating") +
+  ggtitle("Movie SD vs review count")
+grid.arrange(avgMoviePlot, sdMoviePlot, ncol = 2)
+```
+
+##### Users: The `userId` variable
+
+The user variable consists of a `userId`, a unique integer ID number for each user that can be converted to a factor. There are 69878 unique users in the dataset.
+
+##### Number of User Reviews
+
+All users have at least 10 reviews with a median of 62 reviews. The interquartile range was 32-141 reviews.
+
+```{r echo=FALSE }
+users <- edx %>%
+  group_by(userId) %>%
+  summarize(reviews = n(),
+            avgRating = mean(rating),
+            sdRating = sd(rating))
+users %>%
+  ggplot(aes(reviews)) +
+  geom_histogram(color = "black", bins = 50) +
+  scale_x_log10() +
+  ggtitle("Number of reviews per user") +
+  xlab("Number of reviews (log scale)") +
+  ylab("Count of users") +
+  scale_color_manual(labels = c("median", "1st/3rd quartiles"), values = c("blue", "red")) +
+  geom_vline(aes(xintercept = 62.0, color = "red"), show.legend = TRUE) +
+  geom_vline(aes(xintercept = 32.0, color = "blue"), show.legend = TRUE) +
+  geom_vline(aes(xintercept = 141.0, color = "blue")) +
+  labs(color = "Key values")
+```
+
+##### Average User Review
+
+Different users have different average ratings. The mean average rating across all users is 3.614, but individual users have distinct rating distributions and innate tendencies to rate higher or lower.
+
+```{r echo=FALSE}
+users %>%
+  ggplot(aes(x = avgRating)) + 
+  geom_histogram(bins = 20, color = "black") +
+  ggtitle("Distribution of average rating by user") +
+  xlab("Average rating") +
+  ylab("Count of users")
+```
+
+##### Relationship Between Number of Total Reviews by User and User Ratings
+
+Multiple effects are visible when comparing average user review and standard deviation of user reviews to number of reviews per user. First, the majority of users tend to have a mean review around 3.5, but the expected rating decreases as number of reviews by user increases. Also, users with low numbers of reviews are more likely to have extreme average ratings over 4.5 or below 2. Extremely large or small user standard deviations also tend to become less frequent as the number of reviews increases, suggesting users may become more consistent in rating over time and that user average may be more predictive for users with higher numbers of reviews.
+
+```{r echo=FALSE}
+userAvgGraph <- users %>%
+  ggplot(aes(reviews, avgRating)) +
+  geom_hex() +
+  geom_smooth(col = "red") +
+  scale_x_log10() +
+  ggtitle("User average rating by review count") +
+  xlab("Number of total reviews by user") +
+  ylab("Average rating (star) of user")
+userSdGraph <- users %>%
+  ggplot(aes(reviews, sdRating)) +
+  geom_hex() +
+  geom_smooth(col = "red") +
+  scale_x_log10() +
+  ggtitle("User SD by review count") +
+  xlab("Number of total reviews by user") +
+  ylab("Rating (star) standard deviation of user")
+grid.arrange(userAvgGraph, userSdGraph, ncol = 2)
+```
+
+### Genres: The `genres` variable
+
+`genres` is a pipe-separated list of film genres that apply to a given movie. There are 19 base genres plus an unknown category. In order to facilitate handling of movies with multiple genres, and to avoid excessive modeling bias by making genre groups too specific and small, the genres are reduced to the 19 base genres plus the unknown genre category. The most popular genres by review count are Drama (3.91 million reviews) and Comedy (3.54 million reviews) and the least popular genres are IMAX (8181 reviews) and Unknown (7 reviews).
+
+```{r echo=FALSE}
+# rename missing genre category
+edx$genres[edx$genres == "(no genres listed)"] <- "Unknown"
+# split genres into list on pipe character
+edxGenres <- edx %>%
+  mutate(genreList = strsplit(genres, "|", fixed=TRUE))
+# define vector of base genres
+baseGenres <- c("Action", "Adventure", "Animation", "Children", "Comedy", "Crime", "Documentary", "Drama", "Fantasy", "Film-Noir", "IMAX", "Horror", "Musical", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western", "Unknown")
+# initialize genreCount
+genreReviewCount <- vector(mode="list", length = length(baseGenres))
+names(genreReviewCount) <- baseGenres
+for (i in 1:length(baseGenres)){
+  genreReviewCount[[i]] = 0
+}
+# walk through observations and increment genreCount
+for (obs in edxGenres$genreList){
+  for (genre in obs){
+    genreReviewCount[[genre]] <- genreReviewCount[[genre]] + 1
+  }
+}
+# create data frame of base genre review counts
+genreReviewCount <- as.data.frame(genreReviewCount) %>%
+  gather(genre, reviewCount) %>%
+  arrange(desc(reviewCount))
+# reorder genre count by number of reviews
+genreOrder <- genreReviewCount$genre
+genreReviewCount <- genreReviewCount %>%
+  mutate(genre = factor(genre, levels = genreOrder))
+# barplot of genre counts
+genreReviewCount %>%
+  ggplot(aes(genre, reviewCount)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Genre") +
+  ylab("Number of reviews") +
+  ggtitle("Number of reviews per base genre")
+```
+
+#### Average ratings of base genres
+
+Genres differ greatly in their average rating and the standard deviation of their ratings. Film-Noir has the highest average rating with the lowest standard deviation, while Horror has the lowest average rating with the highest standard deviation.
+
+
+```{r echo=FALSE}
+# add variables for individual genres
+edx <- edx %>%
+  mutate(action = str_detect(genres, "Action"),
+         adventure = str_detect(genres, "Adventure"),
+         animation = str_detect(genres, "Animation"),
+         children = str_detect(genres, "Children"),
+         comedy = str_detect(genres, "Comedy"),
+         crime = str_detect(genres, "Crime"),
+         documentary = str_detect(genres, "Documentary"),
+         drama = str_detect(genres, "Drama"),
+         fantasy = str_detect(genres, "Fantasy"),
+         filmNoir = str_detect(genres, "Film-Noir"),
+         imax = str_detect(genres, "IMAX"),
+         horror = str_detect(genres, "Horror"),
+         musical = str_detect(genres, "Musical"),
+         mystery = str_detect(genres, "Mystery"),
+         romance = str_detect(genres, "Romance"),
+         sciFi = str_detect(genres, "Sci-Fi"),
+         thriller = str_detect(genres, "Thriller"),
+         war = str_detect(genres, "War"),
+         western = str_detect(genres, "Western"),
+         unknown = str_detect(genres, "Unknown"))
+# calculate average rating per genre
+avgRatingBaseGenre <- sapply(seq(8,27), function(i){
+  genreSubset <- edx[which(edx[[i]]),]
+  c(mean(genreSubset$rating), sd(genreSubset$rating))
+})
+# create table of base genre ratings
+baseGenreRatings <- tibble(genre = baseGenres,
+                           avgRating = avgRatingBaseGenre[1,],
+                           sdRating = avgRatingBaseGenre[2,])
+# merge with genre review counts and arrange
+baseGenreRatings <- baseGenreRatings %>%
+  left_join(genreReviewCount) %>%
+  select(genre, reviewCount, avgRating, sdRating) %>%
+  arrange(desc(avgRating)) 
+# replace NA values of review counts that were lost due to factor/character mismatch
+scifi_count <- genreReviewCount[7,2]
+filmnoir_count <- genreReviewCount[17,2]
+baseGenreRatings$reviewCount[1] <- filmnoir_count
+baseGenreRatings$reviewCount[19] <- scifi_count
+# name columns
+colnames(baseGenreRatings) = c("Genre", "Reviews", "Average Rating", "Rating SD")
+# make table
+baseGenreRatings %>% knitr::kable(caption = "Rating trends of different base genres")
+```
+
+#### Distributions of base genres
+
+Different base genres have different rating distributions. Consider the comparison between horror, sci-fi and film-noir, where Horror and Sci-Fi have a relative left skew and film-noir has a relative right skew.
+
+
+```{r echo=FALSE}
+# histogram of Sci-Fi movie ratings
+sciFiHist <- edx %>%
+  filter(sciFi) %>%
+  ggplot(aes(ratingFactor)) +
+  geom_bar() +
+  ggtitle("Sci-Fi") +
+  xlab("Rating") +
+  ylab("Number of reviews")
+# histogram of horror movie ratings
+horrorHist <- edx %>%
+  filter(horror) %>%
+  ggplot(aes(ratingFactor)) +
+  geom_bar() +
+  ggtitle("Horror") +
+  xlab("Rating") +
+  ylab("Number of reviews")
+# histogram of film noir movie ratings
+filmNoirHist <- edx %>%
+  filter(filmNoir) %>%
+  ggplot(aes(ratingFactor)) +
+  geom_bar() +
+  ggtitle("Film-Noir") +
+  xlab("Rating") +
+  ylab("Number of reviews")
+# arrange histograms into grid
+grid.arrange(horrorHist, sciFiHist, filmNoirHist, ncol = 3)
+```
+
+## Modeling
+
+For all models, the mean overall rating, movie, user or genre effects were calculated using the training set. The model's performance was evaluated on the test set using RMSE as the loss function. The final model containing movie, user and genre effets was then applied to the training set.
+
+```{r echo=FALSE}
+data.frame(Model = c("Mean rating", "Regularized movie effect added", "Regularized user effect added", "Regularized genre effect added", "Final model on validation set"),
+           RMSE = c(1.0593, 0.9412, 0.8623, 0.8620, 0.8649)) %>%
+  knitr::kable(caption = "Root mean squared error (RMSE) of regularized models on test and validation sets")
+```
+
+#### The naive assumption - predicting the mean rating
+
+The simplest possible recommendation system is to predict the same rating for all movies and all users. This assumes there is a true rating that applies to all users and movies, and that all variation we see is random error. 
+The naive assumption generates a test set RMSE of 1.06.
+
+#### Movie effects with regularization
+
+Each movie has an intrinsic quality reflected in the difference between its average rating and the average rating across all movies.Because different movies have different numbers of ratings, and the number of ratings affects confidence in the movie's true quality, regularization was employed for estimates of the movie effect $b_i$. 
+The regularized movie bias was added to the naive prediction of the mean rating `muHat`. Addition of the movie effect reduced the test set RMSE to 0.941.
+
+#### User effect with regularization
+
+Each user has a different distribution of ratings. Each user's intrinsic bias towards or away from the mean can be determined by calculating the mean difference between a user's rating and the expected rating for a given movie as determined in our previous model. A further improvement to our model includes this user effect as $b_u$.
+The regularized user bias was added to the regularized movie model. Addition of the user effect reduced the test set RMSE to 0.8624.
+
+#### Genre effects with regularization
+
+Each genre has a different distribution of ratings. Each genre's intrinsic bias towards or away from the mean can be determined by calculating the difference between a genre's mean rating and the expected rating for a given movie as determined in our previous model. A further improvement to our model includes a genre effect $g_{u,i}$.
+The regularized genre bias was added to the regularized movie-user model. Addition of the genre effect decreased the test set RMSE to 0.8621.
+
+#### Validation set performance of final model
+
+The final model accounting for regularized movie bias, regularized user bias and regularized genre bias yielded an RMSE of 0.865.
+
+## Conclusion
+
+The final model generated predictions on the validation set with an RMSE of 0.865. This model incorporated regularized movie effects, regularized user effects and regularized genre effects. The final RMSE corresponds to an average error of 0.865 stars out of 5, or 17.3%. This suggests the predictions are actionable and useful for a recommendation system, but also that results could be improved with further modeling.
